@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Mobile Voxel Game</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #8CE5FF; touch-action: none; }
+        
+        /* رابط کاربری موبایل */
+        #mobile-ui {
+            position: absolute; width: 100%; height: 100%; pointer-events: none;
+        }
+        
+        /* دکمه‌های حرکتی سمت چپ */
+        .d-pad {
+            position: absolute; bottom: 30px; left: 30px; 
+            width: 150px; height: 150px; pointer-events: auto;
+        }
+        .btn {
+            position: absolute; background: rgba(0, 0, 0, 0.4); 
+            color: white; font-family: sans-serif; font-weight: bold;
+            display: flex; justify-content: center; align-items: center;
+            border-radius: 10px; user-select: none; border: 2px solid rgba(255,255,255,0.2);
+        }
+        .btn:active { background: rgba(255, 255, 255, 0.5); color: black; }
+        
+        #btn-w { top: 0; left: 50px; width: 50px; height: 50px; }
+        #btn-s { bottom: 0; left: 50px; width: 50px; height: 50px; }
+        #btn-a { top: 50px; left: 0; width: 50px; height: 50px; }
+        #btn-d { top: 50px; right: 0; width: 50px; height: 50px; }
+        
+        /* دکمه پرش سمت راست */
+        #btn-jump {
+            position: absolute; bottom: 40px; right: 40px;
+            width: 70px; height: 70px; border-radius: 50%; pointer-events: auto;
+        }
+        
+        /* منطقه لمسی برای چرخش دوربین */
+        #touch-zone {
+            position: absolute; top: 0; right: 0;
+            width: 50%; height: 100%; pointer-events: auto;
+        }
+        
+        #crosshair {
+            position: absolute; top: 50%; left: 50%; width: 10px; height: 10px;
+            background: white; border-radius: 50%; transform: translate(-50%, -50%);
+        }
+    </style>
+</head>
+<body>
+    <div id="crosshair"></div>
+    
+    <div id="mobile-ui">
+        <div class="d-pad">
+            <div id="btn-w" class="btn">W</div>
+            <div id="btn-a" class="btn">A</div>
+            <div id="btn-s" class="btn">S</div>
+            <div id="btn-d" class="btn">D</div>
+        </div>
+        <div id="btn-jump" class="btn">JUMP</div>
+        <div id="touch-zone"></div>
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+
+        // 1. تنظیمات پایه
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.Fog(0x8CE5FF, 20, 50);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.set(0, 10, 0);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: false });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        dirLight.position.set(50, 100, 50);
+        scene.add(dirLight);
+        scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+
+        // 2. ساخت زمین (Chunking ساده)
+        const chunkSize = 32; 
+        const geometry = new THREE.BoxGeometry(1, 1, 1);
+        const material = new THREE.MeshLambertMaterial({ color: 0x65A250 });
+        const instancedMesh = new THREE.InstancedMesh(geometry, material, chunkSize * chunkSize);
+        
+        let blockIndex = 0;
+        const dummy = new THREE.Object3D();
+        
+        for (let x = -chunkSize/2; x < chunkSize/2; x++) {
+            for (let z = -chunkSize/2; z < chunkSize/2; z++) {
+                const y = Math.floor(Math.sin(x/5) * 2 + Math.cos(z/4) * 2);
+                dummy.position.set(x, y, z);
+                dummy.updateMatrix();
+                instancedMesh.setMatrixAt(blockIndex, dummy.matrix);
+                blockIndex++;
+            }
+        }
+        scene.add(instancedMesh);
+
+        // 3. متغیرهای حرکت و کنترل موبایل
+        let moveState = { f: false, b: false, l: false, r: false, jump: false };
+        const velocity = new THREE.Vector3();
+        const direction = new THREE.Vector3();
+        
+        // چرخش دوربین
+        let euler = new THREE.Euler(0, 0, 0, 'YXZ');
+        let touchStartX = 0, touchStartY = 0;
+
+        // 4. اتصال دکمه‌های لمسی به حرکت
+        const bindButton = (id, key) => {
+            const btn = document.getElementById(id);
+            btn.addEventListener('touchstart', (e) => { e.preventDefault(); moveState[key] = true; });
+            btn.addEventListener('touchend', (e) => { e.preventDefault(); moveState[key] = false; });
+        };
+        bindButton('btn-w', 'f');
+        bindButton('btn-s', 'b');
+        bindButton('btn-a', 'l');
+        bindButton('btn-d', 'r');
+        bindButton('btn-jump', 'jump');
+
+        // 5. منطق نگاه کردن به اطراف (Touch Look)
+        const touchZone = document.getElementById('touch-zone');
+        touchZone.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            touchStartX = e.touches[0].pageX;
+            touchStartY = e.touches[0].pageY;
+        });
+
+        touchZone.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            const touchX = e.touches[0].pageX;
+            const touchY = e.touches[0].pageY;
+            
+            const deltaX = touchX - touchStartX;
+            const deltaY = touchY - touchStartY;
+            
+            // سرعت چرخش
+            euler.y -= deltaX * 0.005;
+            euler.x -= deltaY * 0.005;
+            
+            // محدود کردن زاویه نگاه به بالا و پایین
+            euler.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, euler.x));
+            
+            camera.quaternion.setFromEuler(euler);
+            
+            touchStartX = touchX;
+            touchStartY = touchY;
+        });
+
+        // 6. حلقه اصلی بازی
+        let prevTime = performance.now();
+        function animate() {
+            requestAnimationFrame(animate);
+            const time = performance.now();
+            const delta = (time - prevTime) / 1000;
+
+            // جاذبه
+            velocity.y -= 9.8 * 2 * delta;
+
+            // محاسبه مسیر حرکت بر اساس زاویه دوربین
+            direction.z = Number(moveState.f) - Number(moveState.b);
+            direction.x = Number(moveState.r) - Number(moveState.l);
+            direction.normalize();
+
+            // اعمال زاویه دوربین روی حرکت
+            const camDirection = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+            camDirection.y = 0; camDirection.normalize();
+            
+            const camRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+            camRight.y = 0; camRight.normalize();
+
+            if (moveState.f || moveState.b) {
+                camera.position.addScaledVector(camDirection, direction.z * 10 * delta);
+            }
+            if (moveState.l || moveState.r) {
+                camera.position.addScaledVector(camRight, direction.x * 10 * delta);
+            }
+
+            camera.position.y += velocity.y * delta;
+
+            // برخورد ساده با زمین
+            if (camera.position.y < 2) {
+                velocity.y = 0;
+                camera.position.y = 2;
+                if(moveState.jump) velocity.y = 10;
+            }
+
+            prevTime = time;
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
