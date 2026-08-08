@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="fa">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>گاراژ VORTX - اسپرت سوار</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #0b0f19; font-family: Arial, sans-serif; touch-action: none; }
+        
+        /* پنل گاراژ و شخصی‌سازی */
+        #garage-modal {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background: rgba(15, 23, 42, 0.95); padding: 25px; border-radius: 16px;
+            color: white; text-align: center; z-index: 10; border: 2px solid #3b82f6;
+            box-shadow: 0 0 30px rgba(59,130,246,0.5); width: 85%; max-width: 360px;
+        }
+        #garage-modal input, #garage-modal select, #garage-modal button {
+            display: block; width: 100%; margin: 12px auto; padding: 12px;
+            border-radius: 8px; border: none; font-size: 16px; box-sizing: border-box;
+        }
+        #garage-modal input, #garage-modal select { background: #1e293b; color: white; border: 1px solid #334155; }
+        #garage-modal button { background: #3b82f6; color: white; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        #garage-modal button:hover { background: #2563eb; }
+
+        /* رابط کاربری داخل بازی */
+        #ui { position: absolute; top: 15px; left: 15px; color: white; font-size: 18px; display: none; text-shadow: 2px 2px 4px rgba(0,0,0,0.8); z-index: 5; }
+        
+        /* تگ نام و ماشین بالا سر */
+        .name-tag {
+            position: absolute; color: #38bdf8; background: rgba(15,23,42,0.8);
+            padding: 5px 12px; border-radius: 6px; font-size: 13px; pointer-events: none;
+            transform: translate(-50%, -100%); border: 1px solid #38bdf8; z-index: 5; font-weight: bold;
+        }
+
+        /* کنترل‌های لمسی موبایل */
+        #touch-controls {
+            position: absolute; bottom: 20px; width: 100%; display: none;
+            justify-content: space-between; padding: 0 25px; box-sizing: border-box; z-index: 5; pointer-events: none;
+        }
+        .steering-group { display: flex; gap: 10px; pointer-events: auto; }
+        .pedal-group { display: flex; gap: 10px; pointer-events: auto; }
+        .touch-btn {
+            background: rgba(30, 41, 59, 0.7); border: 2px solid rgba(56, 189, 248, 0.6);
+            color: white; font-size: 20px; width: 65px; height: 65px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center; user-select: none;
+        }
+        .touch-btn:active { background: rgba(56, 189, 248, 0.8); }
+    </style>
+</head>
+<body>
+
+    <!-- منوی گاراژ -->
+    <div id="garage-modal">
+        <h2>گاراژ تخصصی VORTX</h2>
+        <input type="text" id="driver-input" placeholder="نام راننده..." maxlength="12">
+        <select id="car-select">
+            <option value="peugeot405">پژو ۴۰۵ SLX (سفید اسپرت)</option>
+            <option value="pars">پژو پارس ELX</option>
+            <option value="pride">پراید ۱۳۱ (کف‌خواب)</option>
+        </select>
+        <button onclick="startDriving()">ورود به گاراژ و تست رانندگی</button>
+    </div>
+
+    <!-- اطلاعات بازی -->
+    <div id="ui">امتیاز: <span id="score">0</span> | راننده: <span id="driver-display"></span></div>
+    <div id="name-tag" class="name-tag" style="display: none;"></div>
+
+    <!-- کنترل‌های لمسی -->
+    <div id="touch-controls">
+        <div class="steering-group">
+            <div class="touch-btn" id="btn-left">◀</div>
+            <div class="touch-btn" id="btn-right">▶</div>
+        </div>
+        <div class="pedal-group">
+            <div class="touch-btn" id="btn-brake">ترمز</div>
+            <div class="touch-btn" id="btn-gas">گاز</div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        let scene, camera, renderer, car, coin;
+        let score = 0;
+        let driverName = "راننده";
+        let carName = "پژو ۴۰۵ SLX";
+        const keys = {};
+        let carSpeed = 0;function startDriving() {
+            const inputName = document.getElementById('driver-input').value.trim();
+            if (inputName !== "") driverName = inputName;
+            
+            const select = document.getElementById('car-select');
+            carName = select.options[select.selectedIndex].text;
+
+            document.getElementById('garage-modal').style.display = 'none';
+            document.getElementById('ui').style.display = 'block';
+            document.getElementById('name-tag').style.display = 'block';
+
+            if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+                document.getElementById('touch-controls').style.display = 'flex';
+            }
+
+            document.getElementById('driver-display').innerText = driverName;
+            initGame();
+        }
+
+        function initGame() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0f172a);
+            
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            document.body.appendChild(renderer.domElement);
+
+            // نورپردازی گاراژ و محیط
+            scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+            const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+            dirLight.position.set(10, 20, 10);
+            scene.add(dirLight);
+
+            // کفپوش بتنی گاراژ/جاده
+            const floor = new THREE.Mesh(
+                new THREE.PlaneGeometry(100, 500),
+                new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.6 })
+            );
+            floor.rotation.x = -Math.PI / 2;
+            scene.add(floor);
+
+            // ساخت مدل ماشین با جزئیات بیشتر (بدنه صندوق‌دار، چراغ‌ها و اگزوز)
+            car = new THREE.Group();
+            
+            const bodyMat = new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0.3, roughness: 0.1 });
+            const glassMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.9, roughness: 0.1 });
+            const exhaustMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, metalness: 0.9 });
+
+            // بدنه اصلی
+            const mainBody = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.55, 4.2), bodyMat);
+            mainBody.position.y = 0.5;
+            car.add(mainBody);
+
+            // صندوق عقب و کاپوت کشیده (استایل پژو)
+            const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.5, 2.2), glassMat);
+            cabin.position.set(0, 0.95, -0.1);
+            car.add(cabin);
+
+            // اگزوز اسپرت استیل در انتهای ماشین
+            const exhaust = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.4, 16), exhaustMat);
+            exhaust.rotation.x = Math.PI / 2;
+            exhaust.position.set(0.5, 0.3, 2.1);
+            car.add(exhaust);
+
+            car.position.y = 0;
+            scene.add(car);
+
+            // سکه سه‌بعدی طلایی
+            coin = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.6, 0.6, 0.15, 32),
+                new THREE.MeshStandardMaterial({ color: 0xfacc15, metalness: 0.8, roughness: 0.2 })
+            );
+            coin.rotation.x = Math.PI / 2;
+            coin.position.set(0, 0.5, -15);
+            scene.add(coin);
+
+            camera.position.set(0, 4, 8);
+
+            // کنترل‌های کیبورد
+            window.addEventListener('keydown', (e) => keys[e.key.toLowerCase()] = true);
+            window.addEventListener('keyup', (e) => keys[e.key.toLowerCase()] = false);
+
+            // کنترل‌های لمسی
+            setupTouch('btn-gas', 'w');
+            setupTouch('btn-brake', 's');
+            setupTouch('btn-left', 'a');
+            setupTouch('btn-right', 'd');
+
+            animate();
+        }
+
+        function setupTouch(id, keyName) {
+            const btn = document.getElementById(id);
+            btn.addEventListener('touchstart', (e) => { e.preventDefault(); keys[keyName] = true; });
+            btn.addEventListener('touchend', (e) => { e.preventDefault(); keys[keyName] = false; });
+            btn.addEventListener('mousedown', () => keys[keyName] = true);
+            btn.addEventListener('mouseup', () => keys[keyName] = false);
+        }
+
+        function update() {
+            if (keys['w'] || keys['arrowup']) {
+                if (carSpeed < 0.25) carSpeed += 0.005;
+            } else if (keys['s'] || keys['arrowdown']) {
+                if (carSpeed > -0.1) carSpeed -= 0.005;
+            } else {
+                carSpeed *= 0.94;
+            }
+
+            car.position.z -= carSpeed;
+
+            if (carSpeed !== 0) {
+                if (keys['a'] || keys['arrowleft']) car.rotation.y += 0.035;
+                if (keys['d'] || keys['arrowright']) car.rotation.y -= 0.035;
+            }
+
+            car.position.x -= Math.sin(car.rotation.y) * carSpeed;
+
+            // دوربین تعقیب نرم
+            const targetCamX = car.position.x + Math.sin(car.rotation.y) * 6;
+            const targetCamZ = car.position.z + Math.cos(car.rotation.y) * 6;
+            camera.position.x += (targetCamX - camera.position.x) * 0.1;
+            camera.position.z += (targetCamZ - camera.position.z) * 0.1;
+            camera.position.y = car.position.y + 3.5;
+            camera.lookAt(car.position.x, car.position.y + 1, car.position.z);
+
+            coin.rotation.z += 0.04;
+
+            if (car.position.distanceTo(coin.position) < 2) {
+                score += 15;
+                document.getElementById('score').innerText = score;
+                coin.position.set((Math.random() - 0.5) * 12, 0.5, car.position.z - 20 - Math.random() * 20);
+            }
+
+            // نمایش پلاک و نام راننده بالای ماشین
+            const vector = car.position.clone();
+            vector.y += 2;
+            vector.project(camera);
+
+            const x = (vector.x *  .5 + .5) * window.innerWidth;
+            const y = (vector.y * -.5 + .5) * window.innerHeight;
+
+            const nameTag = document.getElementById('name-tag');
+            nameTag.style.left = ${x}px;
+            nameTag.style.top = ${y}px;
+            nameTag.innerText = ${driverName} | ${carName};
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            update();
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('resize', () => {
+            if (camera && renderer) {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            }
+        });
+    </script>
+</body>
+</html>
