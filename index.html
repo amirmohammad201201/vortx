@@ -1,205 +1,263 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="fa" dir="rtl">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Vortx Voxel Engine</title>
+    <title>Counter Web FPS</title>
+    <link rel="manifest" href="manifest.json">
     <style>
-        body { margin: 0; overflow: hidden; background: #8CE5FF; touch-action: none; font-family: sans-serif; }
-        
-        #vortx-brand {
-            position: absolute; top: 15px; left: 15px;
-            color: white; font-weight: bold; font-size: 24px;
-            z-index: 100; text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none;
+        }
+        html, body {
+            overflow: hidden;
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            background-color: #000;
+            font-family: sans-serif;
+        }
+        #renderCanvas {
+            width: 100%;
+            height: 100%;
+            touch-action: none;
+        }
+        /* HUD & Controls */
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 10px;
+            height: 10px;
+            background: rgba(0, 255, 0, 0.8);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            z-index: 10;
+        }
+        #shootBtn {
+            position: absolute;
+            bottom: 40px;
+            right: 40px;
+            width: 80px;
+            height: 80px;
+            background: rgba(255, 0, 0, 0.6);
+            border: 2px solid white;
+            border-radius: 50%;
+            color: white;
+            font-weight: bold;
+            font-size: 16px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10;
+        }
+        #shootBtn:active {
+            background: rgba(255, 0, 0, 0.9);
+        }
+        #joystickZone {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            width: 150px;
+            height: 150px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 50%;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            z-index: 10;
+        }
+        #joystickKnob {
+            position: absolute;
+            top: 50px;
+            left: 50px;
+            width: 50px;
+            height: 50px;
+            background: rgba(255, 255, 255, 0.5);
+            border-radius: 50%;
             pointer-events: none;
         }
-
-        #mobile-ui {
-            position: absolute; width: 100%; height: 100%; pointer-events: none; z-index: 50;
-        }
-        
-        .d-pad {
-            position: absolute; bottom: 30px; left: 30px; 
-            width: 150px; height: 150px; pointer-events: auto;
-        }
-        
-        .btn {
-            position: absolute; background: rgba(0, 0, 0, 0.4); 
-            color: white; font-weight: bold;
-            display: flex; justify-content: center; align-items: center;
-            border-radius: 10px; user-select: none; border: 2px solid rgba(255,255,255,0.2);
-        }
-        
-        .btn:active { background: rgba(255, 255, 255, 0.5); color: black; }
-        
-        #btn-w { top: 0; left: 50px; width: 50px; height: 50px; }
-        #btn-s { bottom: 0; left: 50px; width: 50px; height: 50px; }
-        #btn-a { top: 50px; left: 0; width: 50px; height: 50px; }
-        #btn-d { top: 50px; right: 0; width: 50px; height: 50px; }
-        
-        #btn-jump {
-            position: absolute; bottom: 40px; right: 40px;
-            width: 70px; height: 70px; border-radius: 50%; pointer-events: auto;
-        }
-        
-        #touch-zone {
-            position: absolute; top: 0; right: 0;
-            width: 50%; height: 100%; pointer-events: auto;
-        }
-        
-        #crosshair {
-            position: absolute; top: 50%; left: 50%; width: 10px; height: 10px;
-            background: white; border-radius: 50%; transform: translate(-50%, -50%);
-            z-index: 100; mix-blend-mode: difference;
-        }
     </style>
+    <!-- Babylon.js CDN -->
+    <script src="https://cdn.babylonjs.com/babylon.js"></script>
 </head>
 <body>
-    <div id="vortx-brand">Vortx Engine</div>
+
+    <canvas id="renderCanvas"></canvas>
     <div id="crosshair"></div>
+    <div id="shootBtn">FIRE</div>
     
-    <div id="mobile-ui">
-        <div class="d-pad">
-            <div id="btn-w" class="btn">W</div>
-            <div id="btn-a" class="btn">A</div>
-            <div id="btn-s" class="btn">S</div>
-            <div id="btn-d" class="btn">D</div>
-        </div>
-        <div id="btn-jump" class="btn">JUMP</div>
-        <div id="touch-zone"></div>
+    <div id="joystickZone">
+        <div id="joystickKnob"></div>
     </div>
 
-    <script type="importmap">
-        {
-            "imports": {
-                "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+    <script>
+        const canvas = document.getElementById("renderCanvas");
+        const engine = new BABYLON.Engine(canvas, true);
+
+        const createScene = function () {
+            const scene = new BABYLON.Scene(engine);
+            scene.clearColor = new BABYLON.Color3(0.5, 0.7, 1);
+
+            // ایجاد دوربین اول شخص
+            const camera = new BABYLON.UniversalCamera("camera1", new BABYLON.Vector3(0, 1.8, -10), scene);
+            camera.setTarget(BABYLON.Vector3.Zero());
+            camera.minZ = 0.1;
+            camera.angularSensibility = 2000;
+
+            // نورپردازی
+            const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 1, 0), scene);
+            light.intensity = 0.7;
+
+            // زمین (Map)
+            const ground = BABYLON.MeshBuilder.CreateGround("ground", {width: 60, height: 60}, scene);
+            const groundMat = new BABYLON.StandardMaterial("groundMat", scene);
+            groundMat.diffuseColor = new BABYLON.Color3(0.3, 0.3, 0.3);
+            ground.material = groundMat;
+
+            // هدف‌ها (Targets)
+            for (let i = 0; i < 5; i++) {
+                const box = BABYLON.MeshBuilder.CreateBox("target", {size: 2}, scene);
+                box.position = new BABYLON.Vector3((i - 2) * 5, 1, 10);
+                const boxMat = new BABYLON.StandardMaterial("boxMat", scene);
+                boxMat.diffuseColor = new BABYLON.Color3(1, 0, 0);
+                box.material = boxMat;
+                box.isTarget = true;
             }
-        }
-    </script>
 
-    <script type="module">
-        import * as THREE from 'three';
+            // مدل اسلحه ساده در دست بازیکن
+            const gun = BABYLON.MeshBuilder.CreateBox("gun", {width: 0.2, height: 0.2, depth: 0.8}, scene);
+            gun.parent = camera;
+            gun.position = new BABYLON.Vector3(0.3, -0.3, 0.6);
+            const gunMat = new BABYLON.StandardMaterial("gunMat", scene);
+            gunMat.diffuseColor = new BABYLON.Color3(0.1, 0.1, 0.1);
+            gun.material = gunMat;
 
-        const scene = new THREE.Scene();
-        scene.fog = new THREE.Fog(0x8CE5FF, 20, 50);
+            // جوی‌استیک لمسی حرکتی
+            let moveVector = new BABYLON.Vector2(0, 0);
+            const joystickZone = document.getElementById("joystickZone");
+            const joystickKnob = document.getElementById("joystickKnob");
+            let joystickTouchId = null;
 
-        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
-        camera.position.set(0, 10, 0);
+            joystickZone.addEventListener("touchstart", (e) => {
+                const touch = e.changedTouches[0];
+                joystickTouchId = touch.identifier;
+                updateJoystick(touch);
+            });
 
-        const renderer = new THREE.WebGLRenderer({ antialias: false });
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        document.body.appendChild(renderer.domElement);
+            window.addEventListener("touchmove", (e) => {
+                for (let touch of e.changedTouches) {
+                    if (touch.identifier === joystickTouchId) {
+                        updateJoystick(touch);
+                    }
+                }
+            });
 
-        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-        dirLight.position.set(50, 100, 50);
-        scene.add(dirLight);
-        scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+            const resetJoystick = () => {
+                joystickTouchId = null;
+                moveVector = new BABYLON.Vector2(0, 0);
+                joystickKnob.style.left = "50px";
+                joystickKnob.style.top = "50px";
+            };
 
-        const chunkSize = 32; 
-        const geometry = new THREE.BoxGeometry(1, 1, 1);
-        const material = new THREE.MeshLambertMaterial({ color: 0x65A250 });
-        const instancedMesh = new THREE.InstancedMesh(geometry, material, chunkSize * chunkSize);
-        
-        let blockIndex = 0;
-        const dummy = new THREE.Object3D();
-        
-        for (let x = -chunkSize/2; x < chunkSize/2; x++) {
-            for (let z = -chunkSize/2; z < chunkSize/2; z++) {
-                const y = Math.floor(Math.sin(x/5) * 2 + Math.cos(z/4) * 2);
-                dummy.position.set(x, y, z);
-                dummy.updateMatrix();
-                instancedMesh.setMatrixAt(blockIndex, dummy.matrix);
-                blockIndex++;
+            window.addEventListener("touchend", (e) => {
+                for (let touch of e.changedTouches) {
+                    if (touch.identifier === joystickTouchId) {
+                        resetJoystick();
+                    }
+                }
+            });
+
+            function updateJoystick(touch) {
+                const rect = joystickZone.getBoundingClientRect();
+                const centerX = rect.left + rect.width / 2;
+                const centerY = rect.top + rect.height / 2;
+                let deltaX = touch.clientX - centerX;
+                let deltaY = touch.clientY - centerY;
+                const distance = Math.min(Math.sqrt(deltaX * deltaX + deltaY * deltaY), 50);
+                const angle = Math.atan2(deltaY, deltaX);
+
+                const knobX = 50 + distance * Math.cos(angle);
+                const knobY = 50 + distance * Math.sin(angle);
+                joystickKnob.style.left = `${knobX}px`;
+                joystickKnob.style.top = `${knobY}px`;
+
+                moveVector.x = (distance / 50) * Math.cos(angle);
+                moveVector.y = (distance / 50) * Math.sin(angle);
             }
-        }
-        scene.add(instancedMesh);
 
-        let moveState = { f: false, b: false, l: false, r: false, jump: false };
-        const velocity = new THREE.Vector3();
-        const direction = new THREE.Vector3();
-        
-        let euler = new THREE.Euler(0, 0, 0, 'YXZ');
-        let touchStartX = 0, touchStartY = 0;
+            // چرخش دوربین با Swipe روی سمت راست صفحه
+            let lookTouchId = null;
+            let lastTouchX = 0;
+            let lastTouchY = 0;
 
-        const bindButton = (id, key) => {
-            const btn = document.getElementById(id);
-            btn.addEventListener('touchstart', (e) => { e.preventDefault(); moveState[key] = true; });
-            btn.addEventListener('touchend', (e) => { e.preventDefault(); moveState[key] = false; });
+            window.addEventListener("touchstart", (e) => {
+                for (let touch of e.changedTouches) {
+                    if (touch.clientX > window.innerWidth / 2 && lookTouchId === null) {
+                        lookTouchId = touch.identifier;
+                        lastTouchX = touch.clientX;
+                        lastTouchY = touch.clientY;
+                    }
+                }
+            });
+
+            window.addEventListener("touchmove", (e) => {
+                for (let touch of e.changedTouches) {
+                    if (touch.identifier === lookTouchId) {
+                        const deltaX = touch.clientX - lastTouchX;
+                        const deltaY = touch.clientY - lastTouchY;
+                        camera.rotation.y += deltaX * 0.005;
+                        camera.rotation.x += deltaY * 0.005;
+                        lastTouchX = touch.clientX;
+                        lastTouchY = touch.clientY;
+                    }
+                }
+            });
+
+            window.addEventListener("touchend", (e) => {
+                for (let touch of e.changedTouches) {
+                    if (touch.identifier === lookTouchId) {
+                        lookTouchId = null;
+                    }
+                }
+            });
+
+            // اعمال حرکت به بازیکن در هر فریم
+            scene.onBeforeRenderObservable.add(() => {
+                const speed = 0.15;
+                if (moveVector.length() > 0) {
+                    const forward = camera.getDirection(BABYLON.Axis.Z);
+                    const right = camera.getDirection(BABYLON.Axis.X);
+                    forward.y = 0;
+                    right.y = 0;
+                    forward.normalize();
+                    right.normalize();
+
+                    const moveDir = forward.scale(-moveVector.y).add(right.scale(moveVector.x));
+                    camera.position.addInPlace(moveDir.scale(speed));
+                }
+            });
+
+            // شلیک تیر
+            const shootBtn = document.getElementById("shootBtn");
+            shootBtn.addEventListener("click", () => {
+                const ray = camera.getForwardRay();
+                const hit = scene.pickWithRay(ray);
+
+                if (hit.hit && hit.pickedMesh && hit.pickedMesh.isTarget) {
+                    hit.pickedMesh.dispose(); // حذف هدف در صورت اصابت
+                }
+            });
+
+            return scene;
         };
-        
-        bindButton('btn-w', 'f');
-        bindButton('btn-s', 'b');
-        bindButton('btn-a', 'l');
-        bindButton('btn-d', 'r');
-        bindButton('btn-jump', 'jump');
 
-        const touchZone = document.getElementById('touch-zone');
-        touchZone.addEventListener('touchstart', (e) => {
-            e.preventDefault();
-            touchStartX = e.touches[0].pageX;
-            touchStartY = e.touches[0].pageY;
-        });
-
-        touchZone.addEventListener('touchmove', (e) => {
-            e.preventDefault();
-            const touchX = e.touches[0].pageX;
-            const touchY = e.touches[0].pageY;
-            
-            euler.y -= (touchX - touchStartX) * 0.005;
-            euler.x -= (touchY - touchStartY) * 0.005;
-            euler.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, euler.x));
-            
-            camera.quaternion.setFromEuler(euler);
-            
-            touchStartX = touchX;
-            touchStartY = touchY;
-        });
-
-        let prevTime = performance.now();
-        
-        function animate() {
-            requestAnimationFrame(animate);
-            const time = performance.now();
-            const delta = (time - prevTime) / 1000;
-
-            velocity.y -= 9.8 * 2 * delta;
-
-            direction.z = Number(moveState.f) - Number(moveState.b);
-            direction.x = Number(moveState.r) - Number(moveState.l);
-            direction.normalize();
-
-            const camDirection = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
-            camDirection.y = 0; camDirection.normalize();
-            
-            const camRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
-            camRight.y = 0; camRight.normalize();
-
-            if (moveState.f || moveState.b) {
-                camera.position.addScaledVector(camDirection, direction.z * 10 * delta);
-            }
-            if (moveState.l || moveState.r) {
-                camera.position.addScaledVector(camRight, direction.x * 10 * delta);
-            }
-
-            camera.position.y += velocity.y * delta;
-
-            if (camera.position.y < 2) {
-                velocity.y = 0;
-                camera.position.y = 2;
-                if(moveState.jump) velocity.y = 10;
-            }
-
-            prevTime = time;
-            renderer.render(scene, camera);
-        }
-        
-        animate();
-
-        window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        });
+        const scene = createScene();
+        engine.runRenderLoop(() => { scene.render(); });
+        window.addEventListener("resize", () => { engine.resize(); });
     </script>
 </body>
 </html>
